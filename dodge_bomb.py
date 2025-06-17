@@ -21,6 +21,18 @@ def create_bomb():
     vx = vy = 5
     return bb_img, bb_rect, vx, vy
 
+def check_bound(obj_rct: pg.Rect) -> tuple[bool, bool]:
+    """
+    オブジェクトが画面内or画面外を判定し、真理値タプルを返す関数
+    引数：こうかとんRect or 爆弾Rect
+    戻り値：横方向,縦方向の真理値タプル (True: 画面内/False: 画面外)
+    """
+    yoko, tate = True, True
+    if obj_rct.left < 0 or WIDTH < obj_rct.right:
+        yoko = False
+    if obj_rct.top < 0 or HEIGHT < obj_rct.bottom:
+        tate = False
+    return yoko, tate
 
 
 
@@ -41,9 +53,10 @@ def main():
         screen.blit(bg_img, [0, 0]) 
         
         bb_rect.move_ip(vx, vy)
-        if bb_rect.left < 0 or bb_rect.right > WIDTH:
+        yoko, tate = check_bound(bb_rect)
+        if not yoko:
             vx = -vx
-        if bb_rect.top < 0 or bb_rect.bottom > HEIGHT:
+        if not tate:
             vy = -vy
 
         key_lst = pg.key.get_pressed()
@@ -53,7 +66,6 @@ def main():
                 mv_x += dx
                 mv_y += dy
                 
-        screen.blit(bb_img, bb_rect)
                 
         # if key_lst[pg.K_UP]:
         #     sum_mv[1] -= 5
@@ -64,7 +76,14 @@ def main():
         # if key_lst[pg.K_RIGHT]:
         #     sum_mv[0] += 5
         kk_rct.move_ip(mv_x,mv_y)
+        yoko, tate = check_bound(kk_rct)
+        if not yoko: # 画面外に出たら元に戻す
+            kk_rct.move_ip(-mv_x, 0)
+        if not tate: # 画面外に出たら元に戻す
+            kk_rct.move_ip(0, -mv_y)
+        screen.blit(bb_img, bb_rect)
         screen.blit(kk_img, kk_rct)
+
         pg.display.update()
         tmr += 1
         clock.tick(50)
