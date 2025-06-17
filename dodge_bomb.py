@@ -2,128 +2,177 @@ import os
 import sys
 import pygame as pg
 import random
-
+import time
 
 WIDTH, HEIGHT = 1100, 650
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-DELTA = {pg.K_UP: (0,-5),pg.K_DOWN: (0,+5),pg.K_LEFT:(-5,0),pg.K_RIGHT:(+5,0)}
+
+DELTA = {
+    pg.K_UP: (0, -5),
+    pg.K_DOWN: (0, +5),
+    pg.K_LEFT: (-5, 0),
+    pg.K_RIGHT: (+5, 0)
+}
+
+GAMEOVER_KK_IMG = None
+GAMEOVER_TEXT = None
+GAMEOVER_TEXT_RECT = None
+BLACKOUT_SURFACE = None
+
+# 基準となる元の左向き画像のみをロード
+original_kk_img = pg.image.load("fig/3.png")
+flip_kk_img = pg.transform.flip(original_kk_img,True,False)
+
+# 全ての向きの画像を「元の左向き画像」から生成する
+kk_imgs: dict[tuple[int, int], pg.Surface] = {
+    # 停止時と左向き (0度)
+    (0, 0): pg.transform.rotozoom(original_kk_img, 0, 0.9),
+    (-5, 0): pg.transform.rotozoom(original_kk_img, 0, 0.9),
+    # 右向き (180度)
+    (+5, 0): pg.transform.rotozoom(flip_kk_img, 0, 0.9),
+    # 上向き (時計回りに90度)
+    (0, -5): pg.transform.rotozoom(flip_kk_img, 90, 0.9),
+    # 下向き (反時計回りに90度)
+    (0, +5): pg.transform.rotozoom(flip_kk_img, -90, 0.9),
+    # 左上 (時計回りに45度)
+    (-5, -5): pg.transform.rotozoom(original_kk_img, -45, 0.9),
+    # 左下 (反時計回りに45度)
+    (-5, +5): pg.transform.rotozoom(original_kk_img, 45, 0.9),
+    # 右上 (時計回りに135度)
+    (+5, -5): pg.transform.rotozoom(flip_kk_img, 45, 0.9),
+    # 右下 (反時計回りに135度)
+    (+5, +5): pg.transform.rotozoom(flip_kk_img, -45, 0.9),
+}
 
 
-def create_bomb(r: int = 10, initial_vx: int = 5, initial_vy: int = 5) -> tuple[pg.Surface, pg.Rect, int, int]:
-    """
-    爆弾を生成する関数。
-    引数:
-        r (int): 爆弾の半径。デフォルトは10。
-        initial_vx (int): 爆弾の初期横方向速度。デフォルトは5。
-        initial_vy (int): 爆弾の初期縦方向速度。デフォルトは5。
-    戻り値:
-        tuple[pg.Surface, pg.Rect, int, int]: 爆弾の画像、Rectオブジェクト、横方向速度、縦方向速度。
-    """
-    bb_img = pg.Surface((2*r, 2*r))
-    bb_img.fill((0, 0, 0))  # 黒で塗りつぶし
-    bb_img.set_colorkey((0, 0, 0))  # 黒を透明に
-    pg.draw.circle(bb_img, (255, 0, 0), (r, r), r)
+def get_kk_img(sum_mv: tuple[int, int]) -> pg.Surface:
+    return kk_imgs.get(sum_mv)
+
+
+def init_bb_imgs() -> tuple[list[pg.Surface], list[int]]:
+    bb_imgs = []
+    for r in range(1, 11):
+        bb_img = pg.Surface((20 * r, 20 * r))
+        bb_img.set_colorkey((0, 0, 0))
+        pg.draw.circle(bb_img, (255, 0, 0), (10 * r, 10 * r), 10 * r)
+        bb_imgs.append(bb_img)
+    bb_accs = [a for a in range(1, 11)]
+    return bb_imgs, bb_accs
+
+
+def create_initial_bomb(bb_imgs: list[pg.Surface]) -> tuple[pg.Surface, pg.Rect, int, int]:
+    bb_img = bb_imgs[0]
     bb_rect = bb_img.get_rect()
-    bb_rect.x = random.randint(0, WIDTH - 2*r)
-    bb_rect.y = random.randint(0, HEIGHT - 2*r)
-    vx = initial_vx
-    vy = initial_vy
+    bb_rect.x = random.randint(0, WIDTH - bb_rect.width)
+    bb_rect.y = random.randint(0, HEIGHT - bb_rect.height)
+    vx, vy = +5, +5
     return bb_img, bb_rect, vx, vy
 
+
 def check_bound(obj_rct: pg.Rect) -> tuple[bool, bool]:
-    """
-    オブジェクトが画面内or画面外を判定し、真理値タプルを返す関数
-    引数：
-        obj_rct (pg.Rect): こうかとんRect or 爆弾Rect
-    戻り値：
-        tuple[bool, bool]: 横方向,縦方向の真理値タプル (True: 画面内/False: 画面外)
-    """
     yoko, tate = True, True
-    if obj_rct.left < 0 or WIDTH < obj_rct.right:
+    if not (0 <= obj_rct.left and obj_rct.right <= WIDTH):
         yoko = False
-    if obj_rct.top < 0 or HEIGHT < obj_rct.bottom:
+    if not (0 <= obj_rct.top and obj_rct.bottom <= HEIGHT):
         tate = False
     return yoko, tate
+
+
+def gameover(screen: pg.Surface):
+    global GAMEOVER_KK_IMG, GAMEOVER_TEXT, GAMEOVER_TEXT_RECT, BLACKOUT_SURFACE
+
+    if GAMEOVER_KK_IMG is None:
+        GAMEOVER_KK_IMG = pg.transform.rotozoom(pg.image.load("fig/8.png"), 0, 0.8)
+        font = pg.font.Font(None, 80)
+        GAMEOVER_TEXT = font.render("Game Over", True, (255, 255, 255))
+        GAMEOVER_TEXT_RECT = GAMEOVER_TEXT.get_rect(center=(WIDTH / 2, HEIGHT / 2))
+        BLACKOUT_SURFACE = pg.Surface((WIDTH, HEIGHT))
+        BLACKOUT_SURFACE.set_alpha(128)
+
+    screen.blit(BLACKOUT_SURFACE, (0, 0))
+    
+    text_center_y = GAMEOVER_TEXT_RECT.centery
+    offset_x = GAMEOVER_TEXT_RECT.width / 2 + GAMEOVER_KK_IMG.get_width() / 2 + 20
+    
+    left_kk_rect = GAMEOVER_KK_IMG.get_rect(center=(GAMEOVER_TEXT_RECT.centerx - offset_x, text_center_y))
+    right_kk_rect = GAMEOVER_KK_IMG.get_rect(center=(GAMEOVER_TEXT_RECT.centerx + offset_x, text_center_y))
+
+    screen.blit(GAMEOVER_KK_IMG, left_kk_rect)
+    screen.blit(GAMEOVER_KK_IMG, right_kk_rect)
+    screen.blit(GAMEOVER_TEXT, GAMEOVER_TEXT_RECT)
+    
+    pg.display.update()
+    time.sleep(5)
 
 
 def main():
     pg.display.set_caption("逃げろ！こうかとん")
     screen = pg.display.set_mode((WIDTH, HEIGHT))
-    bg_img = pg.image.load("fig/pg_bg.jpg")    
-    kk_img = pg.transform.rotozoom(pg.image.load("fig/3.png"), 0, 0.9)
-    kk_rct = kk_img.get_rect()
-    kk_rct.center = 300, 200
+    bg_img = pg.image.load("fig/pg_bg.jpg")
 
-    # ゲームオーバー用画像の読み込み
-    gameover_kk_img = pg.transform.rotozoom(pg.image.load("fig/8.png"), 0, 1.0) # 例として8番の画像を使用
-    # ゲームオーバーテキスト用のフォント設定
-    font = pg.font.Font(None, 80) # Noneでデフォルトフォント、80はフォントサイズ
-    gameover_text = font.render("Game Over", True, (255, 255, 255)) # テキスト、アンチエイリアス、色(白)
-    gameover_text_rect = gameover_text.get_rect(center=(WIDTH/2, HEIGHT/2))
+    kk_rct = original_kk_img.get_rect(center=(300, 200))
+    kk_img = kk_imgs[(-5, 0)]
 
+    bb_imgs, bb_accs = init_bb_imgs()
+    bb_img, bb_rect, vx, vy = create_initial_bomb(bb_imgs)
 
     clock = pg.time.Clock()
     tmr = 0
-    bb_img, bb_rect, vx, vy = create_bomb()
-    
-    game_active = True # ゲームがアクティブかどうかのフラグ
 
     while True:
         for event in pg.event.get():
-            if event.type == pg.QUIT:  
+            if event.type == pg.QUIT:
                 return
+
+        screen.blit(bg_img, [0, 0])
         
-        if game_active: # ゲームがアクティブな場合のみ処理を続行
-            screen.blit(bg_img, [0, 0])  
+        idx = min(tmr // 500, 9)
+        
+        # 爆弾の更新
+        new_speed_multiplier = bb_accs[idx]
+        base_bomb_speed = 5
+        vx_abs = base_bomb_speed * new_speed_multiplier
+        vy_abs = base_bomb_speed * new_speed_multiplier
+        vx = vx_abs if vx >= 0 else -vx_abs
+        vy = vy_abs if vy >= 0 else -vy_abs
 
-            if tmr %300 ==0 and tmr !=0:
-                current_r = bb_rect.width // 2
-                new_r = current_r + 5
-                current_vx = abs(vx)
-                current_vy = abs(vy)
-                new_vx = current_vx + 1
-                new_vy = current_vy + 1
-                bb_img_new, bb_rect_new, _, _ = create_bomb(new_r, new_vx, new_vy)
-                bb_rect_new.center = bb_rect.center # 中心位置を維持
-                bb_img = bb_img_new
-                bb_rect = bb_rect_new
-                vx = new_vx if vx > 0 else -new_vx # 符号を維持して速度を更新
-                vy = new_vy if vy > 0 else -new_vy # 符号を維持して速度を更新
-            
-            # 爆弾の移動と画面外判定
-            bb_rect.move_ip(vx, vy)
-            yoko, tate = check_bound(bb_rect)
-            if not yoko:
-                vx = -vx
-            if not tate:
-                vy = -vy
+        old_bomb_center = bb_rect.center
+        bb_img = bb_imgs[idx]
+        bb_rect = bb_img.get_rect(center=old_bomb_center)
+        
+        bb_rect.move_ip(vx, vy)
+        yoko, tate = check_bound(bb_rect)
+        if not yoko:
+            vx *= -1
+        if not tate:
+            vy *= -1
 
-            key_lst = pg.key.get_pressed()
-            mv_x = mv_y = 0
-            for key, (dx,dy)in DELTA.items():
-                if key_lst[key]:
-                    mv_x += dx
-                    mv_y += dy
-                    
-            # こうかとんの移動と画面外判定
-            kk_rct.move_ip(mv_x,mv_y)
-            yoko, tate = check_bound(kk_rct)
-            if not yoko: # 画面外に出たら元に戻す
-                kk_rct.move_ip(-mv_x, 0)
-            if not tate: # 画面外に出たら元に戻す
-                kk_rct.move_ip(0, -mv_y)
-            
-            screen.blit(bb_img, bb_rect)
-            screen.blit(kk_img, kk_rct)
+        # プレイヤーの更新
+        key_lst = pg.key.get_pressed()
+        mv_x, mv_y = 0, 0
+        for key, (dx, dy) in DELTA.items():
+            if key_lst[key]:
+                mv_x += dx
+                mv_y += dy
+        
+        sum_mv = (mv_x, mv_y)
+        if sum_mv != (0, 0): # 移動がない場合は向きを維持
+            kk_img = get_kk_img(sum_mv)
 
-            # 衝突判定
-            if kk_rct.colliderect(bb_rect):
-                game_active = False # ゲームオーバーにする
-        else:
-            # ゲームオーバー画面の表示
-            screen.blit(bg_img, [0, 0]) # 背景を再描画
-            screen.blit(gameover_kk_img, kk_rct) # こうかとんの画像をゲームオーバー用に切り替え
-            screen.blit(gameover_text, gameover_text_rect) # "Game Over"テキスト表示
+        kk_rct.move_ip(mv_x, mv_y)
+        yoko, tate = check_bound(kk_rct)
+        if not yoko:
+            kk_rct.move_ip(-mv_x, 0)
+        if not tate:
+            kk_rct.move_ip(0, -mv_y)
+
+        # 描画と衝突判定
+        screen.blit(bb_img, bb_rect)
+        screen.blit(kk_img, kk_rct)
+
+        if kk_rct.colliderect(bb_rect):
+            gameover(screen)
+            return
 
         pg.display.update()
         tmr += 1
