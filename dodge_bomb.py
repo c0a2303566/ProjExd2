@@ -75,6 +75,20 @@ def main():
         
         if game_active: # ゲームがアクティブな場合のみ処理を続行
             screen.blit(bg_img, [0, 0])  
+
+            if tmr %300 ==0 and tmr !=0:
+                current_r = bb_rect.width // 2
+                new_r = current_r + 5
+                current_vx = abs(vx)
+                current_vy = abs(vy)
+                new_vx = current_vx + 1
+                new_vy = current_vy + 1
+                bb_img_new, bb_rect_new, _, _ = create_bomb(new_r, new_vx, new_vy)
+                bb_rect_new.center = bb_rect.center # 中心位置を維持
+                bb_img = bb_img_new
+                bb_rect = bb_rect_new
+                vx = new_vx if vx > 0 else -new_vx # 符号を維持して速度を更新
+                vy = new_vy if vy > 0 else -new_vy # 符号を維持して速度を更新
             
             # 爆弾の移動と画面外判定
             bb_rect.move_ip(vx, vy)
